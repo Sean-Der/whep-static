@@ -6,7 +6,7 @@
 
 * `git clone https://github.com/sean-der/whep-static.git`
 * `cd whep-static`
-* `git clone`
+* `go run main.go`
 
 In the command line you should see
 
