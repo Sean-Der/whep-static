@@ -1,0 +1,51 @@
+<html>
+  <head>
+    <title>whep-static</title>
+  </head>
+
+  <body>
+    <h3> Video </h3>
+    <video id="videoPlayer" autoplay muted controls style="width: 500"> </video>
+
+
+    <h3> ICE Connection States </h3>
+    <div id="iceConnectionStates"></div> <br />
+  </body>
+
+  <script>
+    let peerConnection = new RTCPeerConnection()
+    peerConnection.addTransceiver('audio', { direction: 'recvonly' })
+    peerConnection.addTransceiver('video', { direction: 'recvonly' })
+
+    peerConnection.ontrack = function (event) {
+      document.getElementById('videoPlayer').srcObject = event.streams[0]
+    }
+
+    peerConnection.oniceconnectionstatechange = () => {
+      let el = document.createElement('p')
+      el.appendChild(document.createTextNode(peerConnection.iceConnectionState))
+
+      document.getElementById('iceConnectionStates').appendChild(el);
+    }
+
+    peerConnection.createOffer().then(offer => {
+      peerConnection.setLocalDescription(offer)
+
+      fetch(`/doSignaling`, {
+        method: 'POST',
+        body: offer.sdp,
+        headers: {
+          Authorization: `Bearer none`,
+          'Content-Type': 'application/sdp'
+        }
+      }).then(r => r.text())
+        .then(answer => {
+          console.log(answer)
+          peerConnection.setRemoteDescription({
+            sdp: answer,
+            type: 'answer'
+          })
+        })
+    })
+  </script>
+</html>
