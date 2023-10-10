@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,15 +11,19 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 	"github.com/pion/webrtc/v4/pkg/media/h264reader"
+	"github.com/pion/webrtc/v4/pkg/media/oggreader"
 )
 
 const (
-	videoFileName     = "output.h264"
+	videoFileName     = "/output.h264"
+	audioFileName     = "/output.ogg"
+	oggPageDuration   = time.Millisecond * 20
 	h264FrameDuration = time.Millisecond * 33
 )
 
 var (
 	videoTrack *webrtc.TrackLocalStaticSample
+	audioTrack *webrtc.TrackLocalStaticSample
 )
 
 func doSignaling(w http.ResponseWriter, r *http.Request) {
@@ -107,6 +112,49 @@ func sendVideo() error {
 	return nil
 }
 
+func sendAudio() error {
+	// Open a OGG file and start reading using our OGGReader
+	file, oggErr := os.Open(audioFileName)
+	if oggErr != nil {
+		panic(oggErr)
+	}
+
+	// Open on oggfile in non-checksum mode.
+	ogg, _, oggErr := oggreader.NewWith(file)
+	if oggErr != nil {
+		panic(oggErr)
+	}
+
+	// Keep track of last granule, the difference is the amount of samples in the buffer
+	var lastGranule uint64
+
+	// It is important to use a time.Ticker instead of time.Sleep because
+	// * avoids accumulating skew, just calling time.Sleep didn't compensate for the time spent parsing the data
+	// * works around latency issues with Sleep (see https://github.com/golang/go/issues/44343)
+	ticker := time.NewTicker(oggPageDuration)
+	for ; true; <-ticker.C {
+		pageData, pageHeader, oggErr := ogg.ParseNextPage()
+		if errors.Is(oggErr, io.EOF) {
+			fmt.Printf("All audio pages parsed and sent")
+			os.Exit(0)
+		}
+
+		if oggErr != nil {
+			panic(oggErr)
+		}
+
+		// The amount of samples is the difference between the last and current timestamp
+		sampleCount := float64(pageHeader.GranulePosition - lastGranule)
+		lastGranule = pageHeader.GranulePosition
+		sampleDuration := time.Duration((sampleCount/48000)*1000) * time.Millisecond
+
+		if oggErr = audioTrack.WriteSample(media.Sample{Data: pageData, Duration: sampleDuration}); oggErr != nil {
+			panic(oggErr)
+		}
+	}
+	return nil
+}
+
 func main() {
 	_, err := os.Stat(videoFileName)
 	if os.IsNotExist(err) {
@@ -118,9 +166,22 @@ func main() {
 		panic(err)
 	}
 
+	audioTrack, err = webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "pion")
+	if err != nil {
+		panic(err)
+	}
+
 	go func() {
 		for {
 			if sendVideoErr := sendVideo(); sendVideoErr != nil {
+				panic(sendVideoErr)
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			if sendVideoErr := sendAudio(); sendVideoErr != nil {
 				panic(sendVideoErr)
 			}
 		}
