@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -51,6 +52,20 @@ func doSignaling(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	rtpSender2, err := peerConnection.AddTrack(audioTrack)
+	if err != nil {
+		panic(err)
+	}
+
+	go func() {
+		rtcpBuf := make([]byte, 1500)
+		for {
+			if _, _, rtcpErr := rtpSender2.Read(rtcpBuf); rtcpErr != nil {
+				return
+			}
+		}
+	}()
+
 	// Set the handler for ICE connection state
 	// This will notify you when the peer has connected/disconnected
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
@@ -60,6 +75,8 @@ func doSignaling(w http.ResponseWriter, r *http.Request) {
 			peerConnection.Close()
 		}
 	})
+
+	log.Printf("offer %s", string(offer))
 
 	if err = peerConnection.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: string(offer)}); err != nil {
 		panic(err)
@@ -74,6 +91,8 @@ func doSignaling(w http.ResponseWriter, r *http.Request) {
 	} else if err = peerConnection.SetLocalDescription(answer); err != nil {
 		panic(err)
 	}
+
+	log.Printf("answer %s", string(answer.SDP))
 
 	<-gatherComplete
 
