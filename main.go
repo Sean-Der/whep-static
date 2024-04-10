@@ -134,15 +134,15 @@ func sendVideo() error {
 
 func sendAudio() error {
 	// Open a OGG file and start reading using our OGGReader
-	file, oggErr := os.Open(audioFileName)
-	if oggErr != nil {
-		panic(oggErr)
+	file, err := os.Open(audioFileName)
+	if err != nil {
+		return err
 	}
 
 	// Open on oggfile in non-checksum mode.
-	ogg, _, oggErr := oggreader.NewWith(file)
-	if oggErr != nil {
-		panic(oggErr)
+	ogg, _, err := oggreader.NewWith(file)
+	if err != nil {
+		return err
 	}
 
 	// Keep track of last granule, the difference is the amount of samples in the buffer
@@ -153,14 +153,11 @@ func sendAudio() error {
 	// * works around latency issues with Sleep (see https://github.com/golang/go/issues/44343)
 	ticker := time.NewTicker(oggPageDuration)
 	for ; true; <-ticker.C {
-		pageData, pageHeader, oggErr := ogg.ParseNextPage()
-		if errors.Is(oggErr, io.EOF) {
-			fmt.Printf("All audio pages parsed and sent")
-			os.Exit(0)
-		}
-
-		if oggErr != nil {
-			panic(oggErr)
+		pageData, pageHeader, err := ogg.ParseNextPage()
+		if errors.Is(err, io.EOF) {
+			return nil
+		} else if err != nil {
+			return err
 		}
 
 		// The amount of samples is the difference between the last and current timestamp
@@ -168,8 +165,8 @@ func sendAudio() error {
 		lastGranule = pageHeader.GranulePosition
 		sampleDuration := time.Duration((sampleCount/48000)*1000) * time.Millisecond
 
-		if oggErr = audioTrack.WriteSample(media.Sample{Data: pageData, Duration: sampleDuration}); oggErr != nil {
-			panic(oggErr)
+		if err = audioTrack.WriteSample(media.Sample{Data: pageData, Duration: sampleDuration}); err != nil {
+			return err
 		}
 	}
 	return nil
