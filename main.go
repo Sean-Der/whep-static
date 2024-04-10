@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"time"
@@ -28,6 +27,12 @@ var (
 )
 
 func doSignaling(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	if r.Method == "OPTIONS" {
+		return
+	}
+
 	offer, err := io.ReadAll(r.Body)
 	if err != nil {
 		panic(err)
@@ -76,8 +81,6 @@ func doSignaling(w http.ResponseWriter, r *http.Request) {
 		}
 	})
 
-	log.Printf("offer %s", string(offer))
-
 	if err = peerConnection.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: string(offer)}); err != nil {
 		panic(err)
 	}
@@ -91,8 +94,6 @@ func doSignaling(w http.ResponseWriter, r *http.Request) {
 	} else if err = peerConnection.SetLocalDescription(answer); err != nil {
 		panic(err)
 	}
-
-	log.Printf("answer %s", string(answer.SDP))
 
 	<-gatherComplete
 
